@@ -66,7 +66,7 @@ def custom_loss_aa_len(y_true, y_pred):
     loss = loss * y_true_mask
     avg_loss = tf.reduce_sum(loss) / tf.reduce_sum(y_true_mask)
 
-    total_loss = avg_loss + tf.reduce_mean(length_differences) * 3.0
+    total_loss = avg_loss + tf.reduce_mean(length_differences) * 1.0
 
     return total_loss
 
@@ -104,7 +104,7 @@ def custom_loss_aa_len_with_similarity(y_true, y_pred):
     avg_loss = tf.reduce_sum(loss) / tf.reduce_sum(y_true_mask)
 
     # Total loss includes both cross-entropy loss and length difference penalty
-    total_loss = avg_loss + tf.reduce_mean(length_differences) * 3.0  # You can adjust the weight of length difference
+    total_loss = avg_loss + tf.reduce_mean(length_differences) * 1.0  # You can adjust the weight of length difference
 
     return total_loss
 
@@ -112,7 +112,7 @@ def custom_loss_aa_len_with_similarity(y_true, y_pred):
 def autoencoder(learning_rate = 0.001):
     num_symbols = 23  #------------->  Number of unique amino acids + special tokens
     embedding_dim = 23  #------------>  Dimensions for embedding space
-    dropout_rate = 0.5  #------------->  Dropout rate
+    dropout_rate = 0.2  #------------->  Dropout rate
 
     # MIC
     mic_input = Input(shape=(1,), name='MIC')  #-------------->  MIC input
@@ -127,17 +127,18 @@ def autoencoder(learning_rate = 0.001):
     # Combine MIC and length inputs
     encoder_input = Concatenate()([mic_dense, len_dense])  #--------->  Combine the input layers
     encoder_input = Dense(128, activation='relu')(encoder_input)  #-->  Interconnect the inputs
-    encoder_input = Dense(64, activation='relu')(encoder_input)  #--->  Narrow the layer
+    encoder_input = Dropout(dropout_rate)(encoder_input)  #---------->  Regularize the input
+    encoder_input = Dense(32, activation='relu')(encoder_input)  #-->  Interconnect the inputs
     encoder_input = Dropout(dropout_rate)(encoder_input)  #---------->  Regularize the input
 
     # Transformer Encoder
-    encoder_output = MultiHeadAttention(num_heads=2, key_dim=64)(encoder_input[:, None, :], encoder_input[:, None, :])
+    encoder_output = MultiHeadAttention(num_heads=2, key_dim=32)(encoder_input[:, None, :], encoder_input[:, None, :])
     encoder_output = GlobalAveragePooling1D()(encoder_output)  #-------->  Further narrow the neurons
     encoder_output = Dropout(dropout_rate)(encoder_output)  #------------>  Regularize the encoder
 
     # Decoder - Auto-regressively predict sequences
     decoder_input  = RepeatVector(MAX_SEQUENCE_LENGTH)(encoder_output)  #---->  Make the decoder
-    decoder_lstm   = LSTM(256, return_sequences=True)(decoder_input)  #------->  Make the sequence
+    decoder_lstm   = LSTM(128, return_sequences=True)(decoder_input)  #------->  Make the sequence
     decoder_lstm   = Dropout(dropout_rate)(decoder_lstm)  #-------------------->  Regularize the output
     decoder_output = Dense(num_symbols, activation='softmax')(decoder_lstm)  #-->  Final output layer
 
@@ -160,25 +161,27 @@ def autoencoder(learning_rate = 0.001):
     return model
 
 def transformer_autoencoder(learning_rate=0.001):
-    num_symbols = 23
-    embedding_dim = 32
     dropout_rate = 0.5
+    input_dim = 64
     num_heads = 8
-    ff_dim = 512  #-->  Feedforward network dimension
+    ff_dim = 256
+    embedding_dim = 32
+    num_symbols = 23
 
     # MIC
     mic_input = Input(shape=(1,), name="MIC")
-    len_dense = Dense(64, activation='relu')(mic_input)  #------>  This layer represents the MIC input
+    len_dense = Dense(input_dim, activation='relu')(mic_input)  #------>  This layer represents the MIC input
     len_dense = Dropout(dropout_rate)(len_dense)  #------------->  Regularize the input
 
     # Sequence length
     len_input = Input(shape=(1,), name="sequence_length")
-    len_dense = Dense(64, activation='relu')(len_input)  #-------->  This layer represents the sequence length
+    len_dense = Dense(input_dim, activation='relu')(len_input)  #-------->  This layer represents the sequence length
     len_dense = Dropout(dropout_rate)(len_dense)  #--------------->  Regularize the input
 
     # Combine MIC and length inputs
     combined_features = Concatenate()([len_dense, len_dense])
-    combined_features = Dense(128, activation="relu")(combined_features)
+    combined_features = Dense(input_dim*2, activation="relu")(combined_features)
+    combined_features = Dropout(dropout_rate)(combined_features)
 
     # Transformer Encoder Block
     encoder_input = tf.expand_dims(combined_features, axis=1)  #-->  Expand dims to simulate sequence input
@@ -187,7 +190,9 @@ def transformer_autoencoder(learning_rate=0.001):
 
     # Feedforward layer after attention
     ff_output = Dense(ff_dim, activation="relu")(attention_output)
+    ff_output = Dropout(dropout_rate)(ff_output)
     ff_output = Dense(embedding_dim, activation="relu")(ff_output)
+    ff_output = Dropout(dropout_rate)(ff_output)
     encoder_output = Dropout(dropout_rate)(ff_output)
 
     # Flatten the encoder output
@@ -195,7 +200,8 @@ def transformer_autoencoder(learning_rate=0.001):
 
     # Decoder for sequence generation
     decoder_input = RepeatVector(MAX_SEQUENCE_LENGTH)(encoder_representation)
-    decoder_lstm = LSTM(256, return_sequences=True)(decoder_input)
+    decoder_lstm  = LSTM(input_dim*4, return_sequences=True)(decoder_input)
+    decoder_lstm   = Dropout(dropout_rate)(decoder_lstm)
     decoder_output = Dense(num_symbols, activation="softmax")(decoder_lstm)
 
     # Define model

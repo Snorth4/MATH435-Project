@@ -1,3 +1,4 @@
+from sklearn.metrics import ConfusionMatrixDisplay, confusion_matrix
 from tensorflow.keras.preprocessing.sequence import pad_sequences
 from sklearn.model_selection import train_test_split
 import tensorflow as tf, numpy as np, pandas as pd
@@ -24,6 +25,7 @@ MAX_SEQUENCE_LENGTH = MAX_PEPTIDE_LENGTH + 2
 # Dictionary for amino acid to integer mapping
 amino_acid_dict = {
     #------------------------>  0, 1, 2 represent padding, start, and end values respectively
+    'PAD': 0, 'START': 1, 'END': 2,
     'A':  3, 'C':  4, 'D':  5, 'E':  6, 'F':  7, 'G':  8, 'H':  9, 'I': 10, 'K': 11, 'L': 12, 
     'M': 13, 'N': 14, 'P': 15, 'Q': 16, 'R': 17, 'S': 18, 'T': 19, 'V': 20, 'W': 21, 'Y': 22
 }
@@ -77,7 +79,7 @@ def preprocess_data(data):
     # Ensure the sequences remain in 1D after padding
     data['sequence'] = [seq.tolist() for seq in padded_sequences]  # Convert each row to a list
     
-    return data
+    return data, scaler
 
 
 def split_data(data):
@@ -120,6 +122,38 @@ def plot(history):
     plt.ylabel('Accuracy')
     plt.xlabel('Epoch')
     plt.legend()
+    plt.show()
+
+
+def plot_confusion_matrix(model, test_inputs, y_test):
+
+    # Predict on the test set
+    predictions = model.predict(test_inputs)
+    
+    # Convert predictions to class indices
+    test_pred_labels = np.argmax(predictions, axis=-1)
+
+    # Flatten the true and predicted labels for token-level comparison
+    test_true_labels = y_test.ravel()
+    test_pred_labels = test_pred_labels.ravel()
+
+    # Ensure the label space includes all tokens (e.g., amino acids + padding)
+    amino_acids = list(amino_acid_dict.keys())
+
+    # Generate the confusion matrix
+    cm = confusion_matrix(test_true_labels, test_pred_labels, labels=np.arange(len(amino_acids)))
+
+    # Normalize the confusion matrix by row (true class)
+    cm_normalized = cm.astype('float') / cm.sum(axis=1)[:, np.newaxis]
+    cm_normalized = cm_normalized * 1000
+    cm_normalized = cm_normalized.astype(np.int64)
+    cm_normalized = np.nan_to_num(cm_normalized)  #->  Replace NaNs with zeros for rows with no instances
+
+    # Display the normalized confusion matrix
+    cmp = ConfusionMatrixDisplay(confusion_matrix=cm_normalized, display_labels=amino_acids)
+    fig, ax = plt.subplots(figsize=(16,16))
+    cmp.plot(ax=ax, cmap=plt.cm.copper, xticks_rotation='vertical')
+    plt.title("Confusion Matrix for Amino Acids (Out of 1000)")
     plt.show()
 
 

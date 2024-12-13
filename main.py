@@ -1,11 +1,13 @@
-import tensorflow as tf, numpy as np
-import keras, models, util
+import tensorflow as tf, numpy as np, keras, models, util, random
 from util import amino_acid_dict, generate_peptide, decode_sequence
+from sklearn.metrics import ConfusionMatrixDisplay, confusion_matrix
+import matplotlib.pyplot as plt
+
 
 def main():
     # Retrieve, pre-process, & split the data
     data = util.load_data()
-    normalized_data = util.preprocess_data(data)
+    normalized_data, scaler = util.preprocess_data(data)
     train_inputs, val_inputs, test_inputs, y_train, y_val, y_test = util.split_data(normalized_data)
 
     lr_schedule = tf.keras.optimizers.schedules.ExponentialDecay(
@@ -15,12 +17,12 @@ def main():
     )
 
     # Initialize the model
-    model = models.autoencoder(learning_rate = 0.00033)
-    model = models.transformer_autoencoder(learning_rate = 0.00033)
+    model = models.autoencoder(learning_rate = 0.00066)
+    # model = models.transformer_autoencoder(learning_rate = lr_schedule)
 
     early_stopping = keras.callbacks.EarlyStopping(
         monitor = 'val_loss',  #-->  Determines what early stops the training
-        patience = 100,  #------->  Number of epochs that make no improvements before stopping the training early
+        patience = 1000,  #------->  Number of epochs that make no improvements before stopping the training early
         restore_best_weights = True
     )
 
@@ -32,7 +34,7 @@ def main():
         epochs = 100000,  #-------------------->  Number of training loops
         callbacks = [early_stopping],  #-------->  Function to end training after overfitting is detected
         validation_data=(val_inputs, y_val),  #--->  Data that the model uses to determine loss and accuracy; integral for early stopping and the patience hyperparameter
-        # shuffle = True  #-------------------------->  Shuffle training data between each epoch
+        shuffle = True  #-------------------------->  Shuffle training data between each epoch
     )
 
     # Evaluate the model
@@ -40,6 +42,8 @@ def main():
     print(f'Test Loss: {test_loss}')
 
     util.plot(history)
+    
+    util.plot_confusion_matrix(model, test_inputs, y_test)
 
     random_samples = data.sample(20)
 
@@ -53,9 +57,9 @@ def main():
         # Generate predicted sequence
         predicted_sequence = generate_peptide(
             model, 
-            mic_value=mic_value, 
-            sequence_length_value=sequence_length,
-            temperature=1.0
+            mic_value = mic_value, 
+            sequence_length_value = sequence_length,
+            temperature = 1.0
         )
 
         peptides.append({
@@ -66,9 +70,10 @@ def main():
 
     # Output real and predicted sequences
     for peptide in peptides:
-        print(f"               MIC: {peptide['MIC']}")
+        print(f"    Normalized MIC: {peptide['MIC']}")
         print(f"     Real Sequence: {peptide['Real Sequence']}")
         print(f"Predicted Sequence: {peptide['Predicted Sequence']}\n")
+
 
 if __name__ == '__main__':
     main()
